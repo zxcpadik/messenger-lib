@@ -1,10 +1,3 @@
-
-
-
-
-
-
-
 using System;
 using System.Net;
 using System.Net.Http;
@@ -15,7 +8,7 @@ using System.Threading.Tasks;
 using Newtonsoft.Json;
 
 public class MessengerApi {
-    public const string SERVER_HOST = "http://10.0.10.4:8080";
+    public const string SERVER_HOST = "https://sh-rework.ru";
 
     public string session { get; private set; } = "";
     public string token { get; private set; } = "";
@@ -24,12 +17,11 @@ public class MessengerApi {
     private CancellationTokenSource cts;
     private Task loopTask;
 
-
-
     private void _connectionLoop() {
         _openSession();
 
         while (!cts.IsCancellationRequested) {
+            Task.Delay(5000).Wait();
             var ok = _pulseSession();
             if (!ok) _openSession();
         }
@@ -54,6 +46,7 @@ public class MessengerApi {
         string strOut = _post("/api/v0/user/auth", strIn, MediaTypeNames.Application.Json);
         AuthResult res = JsonConvert.DeserializeObject<AuthResult>(strOut);
         token = res.ok ? res.token : "";
+        if (res.ok) http.DefaultRequestHeaders.Add("token", token);
         return res;
     }
     public RegisterResult Register(Credentials creds) {
@@ -64,6 +57,7 @@ public class MessengerApi {
         string strOut = _post("/api/v0/user/register", strIn, MediaTypeNames.Application.Json);
         RegisterResult res = JsonConvert.DeserializeObject<RegisterResult>(strOut);
         token = res.ok ? res.token : "";
+        if (res.ok) http.DefaultRequestHeaders.Add("token", token);
         return res;
     }
     public UserInfoResult GetUserInfo() {
@@ -74,6 +68,34 @@ public class MessengerApi {
         string strIn = JsonConvert.SerializeObject(info);
         string strOut = _post("/api/v0/user/setinfo", strIn, MediaTypeNames.Application.Json);
         return JsonConvert.DeserializeObject<SetUserInfoResult>(strOut);
+    }
+    public ConfirmAuth2FAResult Auth2FA(string code) {
+        token = "";
+        http.DefaultRequestHeaders.Remove("token");
+
+        string strIn = JsonConvert.SerializeObject(new { code });
+        string strOut = _post("/api/v0/user/2fa/auth", strIn, MediaTypeNames.Application.Json);
+        var res = JsonConvert.DeserializeObject<ConfirmAuth2FAResult>(strOut);
+        token = res.ok ? res.token : "";
+        if (res.ok) http.DefaultRequestHeaders.Add("token", token);
+        return res;
+    }
+    public Enable2FAResult Enable2FA()
+    {
+        string strOut = _post("/api/v0/user/2fa/enable");
+        return JsonConvert.DeserializeObject<Enable2FAResult>(strOut);
+    }
+    public ConfirmEnable2FAResult Enable2FAConfirm(string code)
+    {
+        string strIn = JsonConvert.SerializeObject(new { code });
+        string strOut = _post("/api/v0/user/2fa/confirm", strIn, MediaTypeNames.Application.Json);
+        return JsonConvert.DeserializeObject<ConfirmEnable2FAResult>(strOut);
+    }
+    public Disable2FAResult Disable2FA(string code)
+    {
+        string strIn = JsonConvert.SerializeObject(new { code });
+        string strOut = _post("/api/v0/user/2fa/disable", strIn, MediaTypeNames.Application.Json);
+        return JsonConvert.DeserializeObject<Disable2FAResult>(strOut);
     }
 
     public MessagePullResult PullMessages(int chatid, int count = 1, int? offset = null) {
@@ -143,6 +165,7 @@ public class MessengerApi {
         http.DefaultRequestHeaders.Remove("session");
 
         session = _get("/api/v0/session/open");
+        http.DefaultRequestHeaders.Add("session", session);
         return session != "";
     }
     private bool _pulseSession() {
@@ -151,8 +174,6 @@ public class MessengerApi {
     }
 
     private string _get(string URL, string body = "", string type = "") {
-        if (session != "" && !http.DefaultRequestHeaders.Contains("session")) http.DefaultRequestHeaders.Add("session", session);
-        if (token != "" && !http.DefaultRequestHeaders.Contains("token")) http.DefaultRequestHeaders.Add("token", token);
         StringContent content = null;
         if (body != "") content = new StringContent(body, Encoding.UTF8, type);
 
@@ -170,8 +191,6 @@ public class MessengerApi {
         return t.Result;
     }
     private string _post(string URL, string body = "", string type = "") {
-        if (session != "" && !http.DefaultRequestHeaders.Contains("session")) http.DefaultRequestHeaders.Add("session", session);
-        if (token != "" && !http.DefaultRequestHeaders.Contains("token")) http.DefaultRequestHeaders.Add("token", token);
         StringContent content = null;
         if (body != "") content = new StringContent(body, Encoding.UTF8, type);
 
@@ -187,18 +206,6 @@ public class MessengerApi {
 
         if (res.StatusCode != HttpStatusCode.OK) throw new Exception($"[GET] FAULT CODE: {res.StatusCode} URL: {URL}");
         return t.Result;
-    }
-    private static string _get(string URL) {
-        HttpClient _http = new HttpClient();
-        var t = _http.GetAsync(SERVER_HOST + URL);
-        t.Wait();
-        var res = t.Result;
-
-        var t2 = res.Content.ReadAsStringAsync();
-        t.Wait();
-
-        if (res.StatusCode != HttpStatusCode.OK) throw new Exception($"[GET] FAULT CODE: {res.StatusCode} URL: {URL}");
-        return t2.Result;
     }
 
     public delegate void ApiEvent(object obj);
